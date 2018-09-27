@@ -1,0 +1,397 @@
+/*
+'User Selections' MEL script
+
+Author: Carlos Rico Adega - carlos.rico.3d@gmail.com
+First Release Date: October 10, 2009
+
+Copyright © 2016 Carlos Rico Adega
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+
+SCRIPT NAME:
+
+	craSelections.mel
+
+	Main procedure:
+	    craSelections;
+
+DESCRIPTION:
+        craSelections is a small script that lets you create selections and recall them
+        later (it does not use sets o quick select sets) so nothing remains ins the scene.
+        It has the option of creating hudButtons in the viewport also. Once the selections
+        are set you can use the shift and control modifiers while pressing any window button
+        or hudButton to add to the current selection (shift key) or remove from current
+        selection (control key).
+
+
+LAUNCH UI:
+
+       craSelections;
+       
+Change Log:
+
+    Version 2.1.0:
+    Date: January 23, 2016
+        - Added load button to reload selection. They were auto-refreshed when 
+          a scene was opened via a scriptJob.
+        - Added save button to save current selections in the UI to a new scene.  
+        
+    Version 2.0.0:
+    Date: January 21, 2016
+        - UI redesign
+        - Selection now stored in the scene
+
+    Version 1.1.0:
+    Date: October 11, 2009
+        - Added auto update buttons state. If you create some HUD buttons and close the UI, later on
+          when you reopen it, the selection buttons will reflect the currently used HUD buttons.
+
+    Version 1.0.0:
+    Date: October 10, 2009
+        - First release.
+
+*/
+       
+global proc craSelectionHUD( int $section, int $block)
+{
+	string $sel[] = `ls -sl`;
+    
+	if(!`objExists craUserSelections_storedSelections`)
+    {
+        createNode -n "craUserSelections_storedSelections" "chooser";
+        for($crai=1;$crai<10;$crai++)
+            addAttr -longName ("selection" + $crai)  -dt "string";
+    }
+	
+	if(size($sel))
+	{
+		string $object;
+		string $labelName = $sel[0];
+		
+		for($selNum in $sel)
+			$object += ($selNum +" ");
+		
+		if(!`checkBox -q -exists cra_createHUDCB`)
+		{
+			hudButton
+                -bw 120
+                -bsh "roundRectangle"
+                -rc ("craSelectStoredSelection(\"" + $object + "\"," + $block + ")")
+                -pc ("print\"\\n\";print \"//" + $object + "\"")
+                -section $section -block $block -blockSize "small"
+                -label $labelName
+                -labelFontSize "small"
+                -ba "left"
+			("craHUDselBtn" + $block);
+		}
+		else if(`checkBox -q -exists cra_createHUDCB` && `checkBox -q -v cra_createHUDCB` )
+		{
+			hudButton
+			-bw 120
+			-bsh "roundRectangle"
+			-rc ("craSelectStoredSelection(\"" + $object + "\"," + $block + ")")
+			-pc ("print\"\\n\";print \"//" + $object + "\"")
+			-section $section -block $block -blockSize "small"
+			-label $labelName
+			-labelFontSize "small"
+			-ba "left"
+			("craHUDselBtn" + $block);
+		} 			
+		
+		if(`window -exists cra_selectionsUIWin`)
+		{
+		    float $color[] = (size($sel) > 1 ? {.0, .75, 1} : {.4, .6, 1});
+			button -e -w 100 
+                -l (size($labelName) > 16 ? `substring $labelName 1 13` + "..." : $labelName)
+                -vis 0
+                -dtg `stringArrayToString $sel " "`
+                -ann (size($sel) > 1 ? ("Multiple objects:\n" + $sel[0] + "..."): $sel[0])
+                -bgc $color[0] $color[1] $color[2]
+                -c ("craSelectStoredSelection(\"" + $object + "\"," + $block + ")") 
+            ("craStoreSel" + (9-$block));
+			button -e -vis 1 ("craStoreSel" + (9-$block));
+			nodeIconButton -e -vis 1 ("cra_delSel" + (9 - $block));
+		}
+		select -r $sel;
+		
+		setAttr -type "string" ("craUserSelections_storedSelections.selection" + (10 - $block)) (stringArrayToString($sel," "));
+	} 
+	else
+        error ("Nothing selected. Select object(s) to store selection " + (10-$block) + ".");
+}
+
+global proc craSelectStoredSelection( string $object, int $block ) 
+{
+	string $tokenBuffer[];
+	int $numTokens = `tokenize $object $tokenBuffer`;
+	for ($i in $tokenBuffer)
+        if(!`objExists $i`) 
+            error ($i + " missing from stored selection.");
+	if($numTokens) 
+	{
+		if(`getModifiers` == 1)
+			select -add $tokenBuffer;
+		if(`getModifiers` == 4)
+			select -deselect $tokenBuffer;
+		if(`getModifiers` == 0)
+			select -r $tokenBuffer;
+	}
+}
+
+global proc craDeleteHUD( int $selNum )
+{
+	if ($selNum == 0)
+	{
+		for ($selNum=1; $selNum<11;$selNum++)
+			headsUpDisplay  -rem ("craHUDselBtn" + (10-$selNum));
+		
+		if(`window -exists cra_selectionsUIWin`)
+		{
+			for( $i=0; $i<9 ;$i++ )
+			{
+				button -e -vis 0 -w 118 -l ("store selection " + ($i+1)) -bgc 0.4 0.4 0.4 -ann "Store selected objects" ("craStoreSel" + ($i));
+				button -e -vis 1 -c ("craSelectionHUD(5," + (9-$i) + ")") ("craStoreSel" + ($i));
+				nodeIconButton -e -vis 0 ("cra_delSel" + $i);
+			}
+		}
+		if(`objExists craUserSelections_storedSelections`)
+		{
+		    delete craUserSelections_storedSelections;
+		    for($crai=0;$crai <9;$crai++)
+                button -e -dtg "" ("craStoreSel" + ($crai));
+		}
+		
+		craInViewMessage( "All user selections", "cleared" );
+	}
+	else 
+	{
+	    if(`headsUpDisplay -ex ("craHUDselBtn" + $selNum)`)
+            headsUpDisplay -rem ("craHUDselBtn" + $selNum);
+		if(`window -exists cra_selectionsUIWin`)
+		{
+			button -e -vis 0 -w 118 -l ("store selection " + (10-$selNum)) -bgc 0.4 0.4 0.4 -ann "Store selected objects" ("craStoreSel" + (9-$selNum));
+			button -e -vis 1 -c ("craSelectionHUD(5," + ($selNum) + ")") ("craStoreSel" + (9-$selNum));
+			nodeIconButton -e -vis 0 ("cra_delSel" + (9 - $selNum));
+			setAttr -type "string" ("craUserSelections_storedSelections.selection" + (10 - $selNum)) "";
+		}
+	}
+}
+
+global proc craSelections()
+{
+	if (`window -exists cra_selectionsUIWin`)
+		showWindow cra_selectionsUIWin;
+	else
+	{
+        window -t " User selections" -tlb 1-mxb 0 -mnb 1 cra_selectionsUIWin;
+        
+        frameLayout -l "User selections" -cl 0 -bv 1 -mh 2 -mw 2 -lv 0 -cll 1 -cc "window -e -h 20 cra_selectionsUIWin" -ec "window -e -h 240 cra_selectionsUIWin" cra_mainFL;
+        columnLayout -adj 1 "cra_mainCL1";
+        
+        rowColumnLayout -nc 2 -cw 1 100 -cw 2 18 "cra_mainRCL";
+        
+        for($selNum=0;$selNum<9;$selNum++)
+        {
+            button -bgc 0.4 0.4 0.4 -w 118 -h 18 
+                -l ("store selection " + ($selNum + 1)) 
+                -ann "Store selected objects" 
+                -c ("craSelectionHUD(5," + (9-$selNum) + ")") 
+                ("craStoreSel" + $selNum);
+            
+            nodeIconButton
+                -al "center"
+                -vis 0 
+                -h 18
+                -w 18
+                -ann "clear selection"
+                -style "iconOnly"
+                -image "smallTrash.png"
+                -c ("craDeleteHUD(" + (9 - $selNum) +")")
+            ("cra_delSel" + $selNum);
+        }
+        
+        separator -h 5 -st "none";
+        setParent ..;
+        checkBox -label "create HUD buttons" cra_createHUDCB;
+        
+        separator -h 5 -st "none";
+        rowLayout -nc 4 -adj 1;
+            button -l "clear all" -h 18 -bgc .7 .7 .7 -c "craDeleteHUD(0)" cra_resetSelections;
+            nodeIconButton
+                -al "center"
+                -h 18
+                -w 18
+                -ann "reload selections from current scene"
+                -style "iconOnly"
+                -image "fileOpen.png"
+                -c "craSelections"
+                ;
+            nodeIconButton
+                -al "center"
+                -h 18
+                -w 18
+                -ann "save UI selections to current scene"
+                -style "iconOnly"
+                -image "fileSave.png"
+                -c "craSelectionsSaveUISelections"
+                ;   
+            nodeIconButton
+                -al "center"
+                -h 18
+                -w 18
+                -ann "About"
+                -style "iconOnly"
+                -image "pickOtherObj.png"
+                -c "craSelectionsAbout"
+                ;
+        setParent ..;
+        window -e -wh 128 220 -s 0 cra_selectionsUIWin;
+        showWindow cra_selectionsUIWin;
+    }
+	
+	for( $i=0; $i<10; $i++)
+	{
+		if(`headsUpDisplay -exists ("craHUDselBtn" + (9-$i))`)
+		{
+			button -e -vis 0 -bgc .4 .6 1 -l ("  " + `hudButton -q -l ("craHUDselBtn" + (9-$i))`) -c `hudButton -q -rc ("craHUDselBtn" + (9-$i))` ("craStoreSel" +$i);
+			button -e -vis 1 ("craStoreSel" +$i);
+			hudButton -q -rc ("craHUDselBtn" + (9-$i));
+		}
+	}
+	
+    if(`objExists craUserSelections_storedSelections`)
+    {
+        for($crai=1;$crai<10;$crai++)
+        {
+            if(size(getAttr("craUserSelections_storedSelections.selection" + $crai)))
+            {
+                string $objects = getAttr("craUserSelections_storedSelections.selection" + $crai);
+                string $selBuffer[];
+                tokenize $objects $selBuffer;
+                float $color[] = (size($selBuffer) > 1 ? {.0, .75, 1} : {.4, .6, 1});
+                button -e 
+                    -vis 0 
+                    -dtg $objects
+                    -l (size($selBuffer[0]) > 16 ? `substring $selBuffer[0] 1 13` + "..." : $selBuffer[0])
+                    -ann (size($selBuffer) > 1 ? ("Multiple objects:\n" + $selBuffer[0] + "..."): $selBuffer[0])
+                    -w 100 
+                    -bgc $color[0] $color[1] $color[2]
+                    -c ("craSelectStoredSelection( \"" + $objects + "\"," + $crai + ")") ("craStoreSel" +($crai-1));
+                button -e -vis 1 ("craStoreSel" + ($crai-1));
+                nodeIconButton -e -vis 1 ("cra_delSel" + ($crai-1));
+            }
+            else
+            {
+                button -e 
+                    -vis 0 
+                    -l ("store selection " + ($crai))
+                    -ann "Store selected objects"
+                    -dtg ""
+                    -w 118 
+                    -bgc 0.4 0.4 0.4
+                    -c ("craSelectionHUD(5," + (10-$crai) + ")")
+                ("craStoreSel" +($crai-1));
+                button -e -vis 1 ("craStoreSel" + ($crai-1));
+                nodeIconButton -e -vis 0 ("cra_delSel" + ($crai-1));
+            }
+        }
+    }
+    else
+        craInViewMessage( "No selections to load", "" );
+}
+
+global proc craInViewMessage( string $message1, string $message2 )
+{
+    if(`getApplicationVersionAsFloat` > 2013)
+    {
+        int $inViewStatus = `optionVar -q inViewMessageEnable`;
+        optionVar -iv inViewMessageEnable true;
+        print ("\n" + $message1 + " " + $message2);
+		inViewMessage -a .9 -smg ("<font color=\"orange\">" + $message1 + " </font><font color=\"limegreen\">" + $message2 + "</font>") -pos midCenter -bkc 0x00001100 -fade -fadeInTime 100 -fadeStayTime 500 -fadeOutTime 100;
+        optionVar -iv inViewMessageEnable $inViewStatus;
+    }
+    else
+    {
+        print ("\n" + $message1 + " " + $message2);
+        headsUpMessage -t 0.1 ($message1 + " " + $message2);
+    }
+}
+
+global proc craSelectionsSaveUISelections()
+{
+    string $mySel[] = `ls -sl`;
+    
+    if(!`objExists craUserSelections_storedSelections`)
+    {
+        createNode -n "craUserSelections_storedSelections" "chooser";
+        for($crai=1;$crai<10;$crai++)
+        {
+            addAttr -longName ("selection" + $crai)  -dt "string";
+            setAttr -type "string" ("craUserSelections_storedSelections.selection" + $crai) `button -q -dtg ("craStoreSel" + ($crai-1))`;
+        }
+    }
+    
+    select -r $mySel;
+}
+
+global proc craSelectionsAbout()
+{
+	if (`window -exists craSkinWeightsEditorAboutWin`)
+		deleteUI craSkinWeightsEditorAboutWin;
+	
+	window -t "About this Tool" -s 0 -tlb 1 craSkinWeightsEditorAboutWin;
+	frameLayout -mw 5 -mh 5 -lv 0;
+        frameLayout -mw 5 -mh 5 -lv 0;
+            columnLayout -adj 1;
+                text -l "<font color=gold><h3>User Selections</h3></font>";
+                text -l "<font color=steelblue><h3>v2.1.0</h3></font>";
+                text -l "\nStore selections for\nlater recall\n";
+                text -l "Selections are stored\nin the scene\n";
+                text -l "Press shift to add\nto current selection\n";
+                text -l "Press control to subtract\nfrom current selection\n";
+                text -h 14 -bgc .0 .75 1 -l "Multiple object selection";
+                text -l "" -h 1;
+                text -h 14 -bgc .4 .6 1 -l "Single object selection";
+                text -l "";
+                textField -ed 0 -text "   carlos.rico.3d@gmail.com";
+				text -l "";
+                text -l "<font color=indianred><h4>Carlos Rico Adega &copy; 2016</h4></font>";
+                text -l "";
+                rowLayout -nc 2 -adj 1;
+                    button -w 70 -l "Downloads" -ann "Free downloads from CreativeCrash.com" -c "showHelp -absolute \"http://www.creativecrash.com/users/charliewales/contributions?tab=free_downloads\"";
+                    button -w 70 -ann "Linked[In] profile"-l "Linked[In]" -c "showHelp -absolute \"http://www.linkedin.com/pub/carlos-rico/6/58/325\"";
+                setParent ..;
+                rowLayout -nc 2 -adj 1;
+                    button -l "Vimeo" -ann "Vimeo Channel" -c "showHelp -absolute \"https://vimeo.com/channels/749131\"";
+                    button -w 70 -l "YouTube" -ann "Youtube Channel" -c "showHelp -absolute \"https://www.youtube.com/channel/UCXnSX8PHpQtwJR-uN-atO3Q\"";
+                setParent ..;      
+            setParent ..;
+        setParent ..;
+    setParent ..;
+    window -e -wh 176 380 craSkinWeightsEditorAboutWin;
+    showWindow craSkinWeightsEditorAboutWin;
+}
+
+craSelections;

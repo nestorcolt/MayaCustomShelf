@@ -1,0 +1,169 @@
+// --------------------------------------------------------------------------
+// ntAttrEditor.mel - MEL Script
+// --------------------------------------------------------------------------
+//
+// DESCRIPTION:
+//	A util for dealing with some attribute stuff.
+//
+// REQUIRES:
+//	Nothing.
+//
+//
+// USAGE:
+//	source "ntAttrEditor.mel"; ntAttrEditor();
+//
+// AUTHORS:
+//	Nelson Teixeira - nelson3d@gmail.com
+//  based on Michael B. Comet' tool - comet@comet-cartoons.com
+//
+// VERSIONS:
+//	1.00 - Aug 19, 2011
+//
+// --------------------------------------------------------------------------
+
+
+/*
+ * ntAttrEditor() - Main Entry
+ */
+global proc ntAttrEditor()
+{
+    if (`window -q -ex ntAttrEditorWin`)
+    	{
+    	showWindow ntAttrEditorWin ;
+    	return ;
+    	}
+
+
+    window -w 350 -h 100 -t "ntAttrEditor - 1.00" ntAttrEditorWin ;
+
+window -q -wh ntAttrEditorWin;
+
+    columnLayout -adj true mainColumn;
+
+
+    button -w 50 -l ("Move UP") -c ("cAE_moveAttrs(0)") -ann ("Slide selected channelBox attributes up.") btnUp ;
+    button -w 50 -l ("Move DOWN") -c ("cAE_moveAttrs(1)") -ann ("Slide selected channelBox attributes down.") btnDown ;
+
+    separator -style none -h 10;
+
+    showWindow ntAttrEditorWin ;
+
+}
+
+
+// --------------------------------------------------------------------------
+
+/*
+ * cAE_moveAttrs() - Adjust attrs
+ */
+global proc cAE_moveAttrs(int $dir)
+{
+
+    // What objs and attrs are highlighted in the channel box?
+    string $cbObjs[] = `channelBox -q -mol mainChannelBox` ;
+    string $cbAttrs[] = `channelBox -q -sma mainChannelBox` ;
+    int $i;
+
+    string $obj ;
+    for ($obj in $cbObjs)
+    	{
+    	if ($dir == 0)	// Work top to bottom if moving up
+    	    {
+    	    for ($i=0; $i < size($cbAttrs); ++$i)
+    	        cAE_moveAttr($obj, $cbAttrs[$i], $dir) ;
+    	    }
+    	else if ($dir == 1)	// Work bottom to top moving down
+    	    {
+    	    for ($i=size($cbAttrs)-1; $i >= 0; --$i)
+    	        cAE_moveAttr($obj, $cbAttrs[$i], $dir) ;
+    	    }
+
+	// Must do this or channel box won't refresh.
+	string $sel[] = `ls -sl -l`;
+	select -cl ;
+	refresh ;
+	select -r $sel ;
+    	}
+
+
+}
+
+
+// --------------------------------------------------------------------------
+
+/*
+ * cAE_moveAttr() - Adjust one attr specified up or down.
+ *		$dir: 0=up 1=down
+ */
+global proc cAE_moveAttr(string $obj, string $attr, int $dir)
+{
+    string $udAttrs[] = `listAttr -ud $obj` ;	// Get just user defined ones.
+    int $i ;
+
+    // First find out where in the order of all the user defined attrs this one is.
+    int $idx = -1 ;
+    for ($i=0; $i < size($udAttrs); ++$i)
+    	{
+    	if ($udAttrs[$i] == $attr)
+    	    {
+    	    $idx = $i;
+    	    break ;
+    	    }
+    	}
+
+    // If we couldn't find it, it's not a ud, so ignore, we can't shift.
+    if ($idx < 0)
+    	{
+    	warning -sl 0 ("Can't shift "+$obj+"."+$attr+" it's not user defined.") ;
+        return ;
+        }
+
+    print ("// Shifting "+($dir==0 ? "Up" : "Down")+" "+$idx+".) "+$obj+"."+$attr+"  //\n") ;
+
+    // Now shift as needed
+    if ($dir == 0 && $idx > 0)
+    	{
+        cAE_dropToBottom($obj, $udAttrs[$idx]) ;	// First this goes down
+
+    	cAE_dropToBottom($obj, $udAttrs[$idx-1]) ;	// Then the one above
+
+    	// Then do the rest
+    	for ($i=$idx+1; $i < size($udAttrs); ++$i)
+    	   {
+    	   cAE_dropToBottom($obj, $udAttrs[$i]) ;
+    	   }
+    	}
+    else if ($dir == 1 && $idx < size($udAttrs)-1)
+    	{
+        cAE_dropToBottom($obj, $udAttrs[$idx+1]) ;	// First the one below goes down
+
+        cAE_dropToBottom($obj, $udAttrs[$idx]) ;	// First this goes down
+
+    	// Then do the rest
+    	for ($i=$idx+2; $i < size($udAttrs); ++$i)
+    	   {
+    	   cAE_dropToBottom($obj, $udAttrs[$i]) ;
+    	   }
+    	}
+
+}
+
+// --------------------------------------------------------------------------
+
+/*
+ * cAE_dropToBottom() - Drop an attr to bottom by rename and back
+ */
+global proc cAE_dropToBottom(string $obj, string $attr)
+{
+    //renameAttr ($obj+"."+$attr) ($attr+"TEMPREN") ;	// there
+    //renameAttr ($obj+"."+$attr+"TEMPREN") ($attr) ;	// and back again
+    deleteAttr ($obj+"."+$attr);
+    undo;
+
+}
+
+// --------------------------------------------------------------------------
+
+ntAttrEditor();
+
+// ###################################################################################################
